@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>English Vocab Trainer</title>
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<style>
+body {
+    font-family: system-ui, sans-serif;
+    background:#f2f4f8;
+    margin:0;
+    padding:15px;
+}
+.card {
+    background:white;
+    padding:16px;
+    border-radius:14px;
+    margin-bottom:20px;
+}
+button {
+    width:100%;
+    padding:14px;
+    font-size:18px;
+    border:none;
+    border-radius:10px;
+    background:#2563eb;
+    color:white;
+    margin-top:10px;
+}
+button.secondary { background:#e5e7eb; color:black; }
+input, textarea {
+    width:100%;
+    padding:12px;
+    font-size:16px;
+    border-radius:8px;
+    border:1px solid #ccc;
+    margin-top:8px;
+}
+.flashcard {
+    font-size:24px;
+    text-align:center;
+    padding:40px 10px;
+}
+</style>
+</head>
+
+<body>
+
+<h1>📚 English Vocab Trainer</h1>
+
+<div class="card">
+<h2>📸 Live‑Scan</h2>
+<video id="video" autoplay playsinline width="100%"></video>
+<button onclick="startScan()">Live‑Scan starten</button>
+<p id="scanStatus"></p>
+</div>
+
+<div class="card">
+<h2>✏ Erkannter Text</h2>
+<textarea id="ocrText" rows="5"></textarea>
+<button class="secondary" onclick="parseText()">Vokabeln erkennen</button>
+</div>
+
+<div class="card">
+<h2>🎴 Karteikarten</h2>
+<div class="flashcard" id="card">Start</div>
+<button onclick="flip()">Karte umdrehen</button>
+<button onclick="rate(3)">✅ Leicht</button>
+<button onclick="rate(2)">😐 Mittel</button>
+<button onclick="rate(1)">❌ Schwer</button>
+<button class="secondary" onclick="nextCard()">Nächste</button>
+<button class="secondary" onclick="speak()">🔊 Aussprache</button>
+</div>
+
+<div class="card">
+<h2>📤 Export</h2>
+<button onclick="exportExcel()">Excel Export</button>
+<button onclick="exportPDF()">PDF Export</button>
+</div>
+
+<script>
+let vocab = JSON.parse(localStorage.getItem("vocab")) || [];
+let index = 0;
+let flipped = false;
+
+async function startScan() {
+  const video = document.getElementById("video");
+  const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+  video.srcObject = stream;
+  scanStatus.textContent = "Live‑OCR läuft…";
+  setInterval(async () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d").drawImage(video,0,0);
+    const { data:{ text }} = await Tesseract.recognize(canvas,"eng+deu",{logger:m=>{}});
+    ocrText.value = text;
+  }, 4000);
+}
+
+function parseText() {
+  ocrText.value.split("\n").forEach(l => {
+    let p = l.split(/[-–:]/);
+    if (p.length>=2) {
+      const a=p[0].trim(), b=p[1].trim();
+      const isEnglish = /^[a-zA-Z]/.test(a);
+      vocab.push({
+        front: isEnglish ? a : b,
+        back: isEnglish ? b : a,
+        level:1,
+        next:Date.now()
+      });
+    }
+  });
+  localStorage.setItem("vocab",JSON.stringify(vocab));
+  alert("✅ Importiert");
+}
+
+function showCard() {
+  if (!vocab.length) return;
+  card.textContent = flipped ? vocab[index].back : vocab[index].front;
+}
+function flip(){flipped=!flipped;showCard();}
+function nextCard(){flipped=false;index=(index+1)%vocab.length;showCard();}
+function rate(l){
+  vocab[index].level=l;
+  vocab[index].next=Date.now()+l*86400000;
+  localStorage.setItem("vocab",JSON.stringify(vocab));
+  nextCard();
+}
+function speak(){
+  const u=new SpeechSynthesisUtterance(vocab[index].front);
+  u.lang="en-GB";
+  speechSynthesis.speak(u);
+}
+showCard();
+
+function exportExcel(){
+  const ws = XLSX.utils.json_to_sheet(vocab);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,"Vokabeln");
+  XLSX.writeFile(wb,"vokabeln.xlsx");
+}
+function exportPDF(){
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF();
+  vocab.forEach((v,i)=>pdf.text(`${v.front} - ${v.back}`,10,10+i*8));
+  pdf.save("vokabeln.pdf");
+}
+</script>
+
+</body>
+</html>
